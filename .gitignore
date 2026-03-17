@@ -190,3 +190,7 @@ cache
 
 # MacOS Finder
 **/.DS_Store
+
+
+# misc
+changelog/
