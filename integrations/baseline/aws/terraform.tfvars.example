@@ -1,0 +1,11 @@
+project_name = "master-sebs-baseline"
+aws_region     = "eu-north-1"
+
+vpc_cidr              = "10.50.0.0/16"
+public_subnet_cidrs   = ["10.50.1.0/24", "10.50.2.0/24"]
+redis_node_type       = "cache.t4g.micro"
+redis_engine_version  = "7.1"
+
+lambda_timeout_seconds                  = 30
+lambda_memory_mb                      = 256
+# lambda_reserved_concurrent_executions = 10

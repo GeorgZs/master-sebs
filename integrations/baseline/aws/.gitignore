@@ -1,0 +1,6 @@
+lambda_package/
+lambda_bundle.zip
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
