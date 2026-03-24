@@ -25,6 +25,7 @@ if str(INTEGRATIONS_ROOT) not in sys.path:
     sys.path.insert(0, str(INTEGRATIONS_ROOT))
 
 from common_schema.fields import COMMON_FIELDS  # noqa: E402
+from common_schema.io import validate_rows  # noqa: E402
 
 
 def _resolve_path(root: Path, path_text: str) -> Path:
@@ -52,6 +53,7 @@ def _load_jsonl_rows(path: Path) -> List[Dict[str, Any]]:
         if not line:
             continue
         rows.append(json.loads(line))
+    validate_rows(rows)
     return rows
 
 

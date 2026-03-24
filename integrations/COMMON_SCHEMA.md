@@ -63,6 +63,16 @@ Shared HTTP helpers:
 - [`common_schema/http_latency_bench.py`](common_schema/http_latency_bench.py)
 - [`common_schema/collect_http_run.py`](common_schema/collect_http_run.py)
 - [`common_schema/latency_stats.py`](common_schema/latency_stats.py)
+- [`common_schema/event_metrics.py`](common_schema/event_metrics.py) for optional `events.jsonl` sidecars.
+
+### Lightweight event sidecar (optional)
+
+Collectors may ingest `events.jsonl` from run directories. Minimal envelope:
+
+- required: `schema_version`, `run_id`, `system`, `ts_ms`, `event_type`, `ok`
+- optional: `function_id`, `state_unit_id`, `key_id`, `request_id`, `latency_ms`, `error_code`, `attributes`
+
+System-specific extensions should live under `attributes` (for example `attributes.crdt.*` in Cloudburst).
 
 ## Limitations and possible issues
 

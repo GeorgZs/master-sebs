@@ -23,6 +23,12 @@ def sec_to_ms(value):
     return float(value) * 1000.0
 
 
+def metric_value(values, metadata, key):
+    if key in values:
+        return values.get(key)
+    return metadata.get(key)
+
+
 def normalize_record(input_path: str, payload: dict) -> List[Dict]:
     metadata = payload.get("metadata", {})
     metrics = payload.get("metrics", {})
@@ -60,13 +66,46 @@ def normalize_record(input_path: str, payload: dict) -> List[Dict]:
                 "latency_min_ms": sec_to_ms(values.get("min")),
                 "latency_max_ms": sec_to_ms(values.get("max")),
                 "total_computation_time_sec": total_time,
-                "cost_per_million_ops_usd": None,
+                "cost_per_million_ops_usd": metric_value(values, metadata, "cost_per_million_ops_usd"),
                 "throughput_per_resource_unit": throughput_per_resource,
-                "resource_cpu_avg": None,
-                "resource_memory_avg_mb": None,
-                "state_size_kb": None,
-                "state_placement": None,
-                "convergence_time_ms": None,
+                "resource_cpu_avg": metric_value(values, metadata, "resource_cpu_avg"),
+                "resource_memory_avg_mb": metric_value(values, metadata, "resource_memory_avg_mb"),
+                "state_size_kb": metric_value(values, metadata, "state_size_kb"),
+                "state_placement": metric_value(values, metadata, "state_placement"),
+                "convergence_time_ms": metric_value(values, metadata, "convergence_time_ms"),
+                "error_rate": metric_value(values, metadata, "error_rate"),
+                "timeout_rate": metric_value(values, metadata, "timeout_rate"),
+                "failed_requests": metric_value(values, metadata, "failed_requests"),
+                "http_2xx_count": metric_value(values, metadata, "http_2xx_count"),
+                "http_4xx_count": metric_value(values, metadata, "http_4xx_count"),
+                "http_5xx_count": metric_value(values, metadata, "http_5xx_count"),
+                "http_other_count": metric_value(values, metadata, "http_other_count"),
+                "cold_start_latency_worker_ms": metric_value(values, metadata, "cold_start_latency_worker_ms"),
+                "cold_start_latency_server_ms": metric_value(values, metadata, "cold_start_latency_server_ms"),
+                "scale_up_time_ms": metric_value(values, metadata, "scale_up_time_ms"),
+                "scale_down_time_ms": metric_value(values, metadata, "scale_down_time_ms"),
+                "scaling_scope": metric_value(values, metadata, "scaling_scope"),
+                "scale_to_zero_supported": metric_value(values, metadata, "scale_to_zero_supported"),
+                "scale_to_zero_reactivation_ms": metric_value(values, metadata, "scale_to_zero_reactivation_ms"),
+                "scaling_granularity": metric_value(values, metadata, "scaling_granularity"),
+                "instrumented_provisioning": metric_value(values, metadata, "instrumented_provisioning"),
+                "scaling_group_placement": metric_value(values, metadata, "scaling_group_placement"),
+                "key_id": metric_value(values, metadata, "key_id"),
+                "key_group": metric_value(values, metadata, "key_group"),
+                "keys_count": metric_value(values, metadata, "keys_count"),
+                "key_skew_ratio": metric_value(values, metadata, "key_skew_ratio"),
+                "state_units_per_function_n": metric_value(values, metadata, "state_units_per_function_n"),
+                "concurrent_functions_per_state_unit_n": metric_value(
+                    values, metadata, "concurrent_functions_per_state_unit_n"
+                ),
+                "txn_abort_rate": metric_value(values, metadata, "txn_abort_rate"),
+                "txn_conflict_rate": metric_value(values, metadata, "txn_conflict_rate"),
+                "txn_retry_count": metric_value(values, metadata, "txn_retry_count"),
+                "txn_commit_latency_ms": metric_value(values, metadata, "txn_commit_latency_ms"),
+                "stale_read_rate": metric_value(values, metadata, "stale_read_rate"),
+                "read_after_write_violation_rate": metric_value(
+                    values, metadata, "read_after_write_violation_rate"
+                ),
                 "source_file": str(Path(input_path).resolve()),
             }
         )
