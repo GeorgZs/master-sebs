@@ -38,6 +38,15 @@ From `master-sebs/`:
 ./integrations/cloudburst/deploy_cloudburst.sh stop
 ```
 
+Optional sidecar ingestion (for CRDT/disaggregation/elasticity enrichments):
+
+```bash
+CB_EVENTS_JSONL='/path/to/cloudburst-events.jsonl' \
+CB_TELEMETRY_JSON='/path/to/cloudburst-telemetry.json' \
+CB_EXTRA_METRICS_JSON='/path/to/cloudburst-extra-metrics.json' \
+./integrations/cloudburst/run_cloudburst_bench.sh composition 200
+```
+
 AWS infrastructure track:
 
 ```bash

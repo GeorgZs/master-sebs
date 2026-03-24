@@ -12,6 +12,8 @@ BODY_JSON="${BODY_JSON:-{\"key\":\"baseline:bench\"}}"
 BENCHMARK_NAME="${BENCHMARK_NAME:-http-redis-counter}"
 CONSISTENCY_MODEL="${CONSISTENCY_MODEL:-normal}"
 DEPLOYMENT_MODE="${DEPLOYMENT_MODE:-aws-lambda-redis}"
+BASELINE_EVENTS_JSONL="${BASELINE_EVENTS_JSONL:-}"
+BASELINE_TELEMETRY_JSON="${BASELINE_TELEMETRY_JSON:-}"
 
 if [[ -z "${BASELINE_API_URL}" ]]; then
   echo "Set BASELINE_API_URL to your API Gateway invoke URL (terraform output http_api_endpoint)." >&2
@@ -47,6 +49,16 @@ python3 "${COMMON_DIR}/http_latency_bench.py" \
   --count "${NUM_REQUESTS}" \
   --method "${HTTP_METHOD}" \
   --body-json "${BODY_JSON}"
+
+# Optional: ingest sidecars (if external collectors emit them).
+if [[ -n "${BASELINE_EVENTS_JSONL}" && -f "${BASELINE_EVENTS_JSONL}" ]]; then
+  cp -f "${BASELINE_EVENTS_JSONL}" "${RUN_DIR}/events.jsonl"
+  echo "Copied baseline events sidecar: ${BASELINE_EVENTS_JSONL}"
+fi
+if [[ -n "${BASELINE_TELEMETRY_JSON}" && -f "${BASELINE_TELEMETRY_JSON}" ]]; then
+  cp -f "${BASELINE_TELEMETRY_JSON}" "${RUN_DIR}/telemetry.json"
+  echo "Copied baseline telemetry sidecar: ${BASELINE_TELEMETRY_JSON}"
+fi
 
 python3 "${SCRIPT_DIR}/collect_baseline_results.py" \
   --run-dir "${RUN_DIR}" \

@@ -71,6 +71,15 @@ python3 integrations/boki/boki_to_common_schema.py \
   --output-csv integrations/boki/results/normalized/boki_common.csv
 ```
 
+Optional sidecar ingestion (for disaggregation/runtime metrics):
+
+```bash
+BOKI_HTTP_URL='http://GATEWAY_IP:8080/' \
+BOKI_EVENTS_JSONL='/path/to/boki-events.jsonl' \
+BOKI_TELEMETRY_JSON='/path/to/boki-telemetry.json' \
+./integrations/boki/run_boki_bench.sh 50
+```
+
 ## Notes
 
 - Terraform is a deployment scaffold for repeatable Boki-native experiments, not a full production hardening profile.

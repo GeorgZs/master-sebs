@@ -12,6 +12,9 @@ FUNCTION_ELB="${FUNCTION_ELB:-127.0.0.1}"
 SCHEDULER_IP="${SCHEDULER_IP:-127.0.0.1}"
 CONSISTENCY_MODEL="${CONSISTENCY_MODEL:-normal}"
 DEPLOYMENT_MODE="${DEPLOYMENT_MODE:-cloudburst-local}"
+CB_EVENTS_JSONL="${CB_EVENTS_JSONL:-}"
+CB_TELEMETRY_JSON="${CB_TELEMETRY_JSON:-}"
+CB_EXTRA_METRICS_JSON="${CB_EXTRA_METRICS_JSON:-}"
 
 if [[ ! -d "${CB_ROOT}" ]]; then
   echo "Cloudburst root not found: ${CB_ROOT}" >&2
@@ -58,6 +61,20 @@ for f in log_benchmark.txt log_trigger.txt; do
     cp -f "${CB_ROOT}/${f}" "${RUN_DIR}/${f}"
   fi
 done
+
+# Optional: ingest runtime-emitted sidecars from Cloudburst/Anna deployment.
+if [[ -n "${CB_EVENTS_JSONL}" && -f "${CB_EVENTS_JSONL}" ]]; then
+  cp -f "${CB_EVENTS_JSONL}" "${RUN_DIR}/events.jsonl"
+  echo "Copied Cloudburst events sidecar: ${CB_EVENTS_JSONL}"
+fi
+if [[ -n "${CB_TELEMETRY_JSON}" && -f "${CB_TELEMETRY_JSON}" ]]; then
+  cp -f "${CB_TELEMETRY_JSON}" "${RUN_DIR}/telemetry.json"
+  echo "Copied Cloudburst telemetry sidecar: ${CB_TELEMETRY_JSON}"
+fi
+if [[ -n "${CB_EXTRA_METRICS_JSON}" && -f "${CB_EXTRA_METRICS_JSON}" ]]; then
+  cp -f "${CB_EXTRA_METRICS_JSON}" "${RUN_DIR}/extra_metrics.json"
+  echo "Copied Cloudburst extra metrics sidecar: ${CB_EXTRA_METRICS_JSON}"
+fi
 
 python3 "${SCRIPT_DIR}/collect_cloudburst_results.py" \
   --run-dir "${RUN_DIR}" \
