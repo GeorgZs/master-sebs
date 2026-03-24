@@ -1,0 +1,35 @@
+@startuml sebs_benchmark_to_metrics_flow.puml
+title SeBS Benchmark to System and Metrics Return Flow
+
+actor Researcher
+participant "SeBS Runner\n(run_*_bench.sh)" as Runner
+participant "SeBS Benchmark Client\n(http_latency_bench.py / Cloudburst client)" as BenchClient
+participant "System Under Test\n(Baseline | Boki | Cloudburst/Anna)" as SUT
+participant "Runtime Event Emitter\n(forked repo instrumentation)" as Emitter
+participant "Run Directory\n(results/raw/<run_id>)" as RunDir
+participant "Collector\n(collect_http_run.py / collect_cloudburst_results.py)" as Collector
+participant "Event Aggregator\n(event_metrics.py)" as EventAgg
+participant "Normalizer\n(*_to_common_schema.py)" as Normalizer
+database "Common Schema Outputs\nJSONL + CSV" as CommonOut
+
+Researcher -> Runner: Start benchmark run
+Runner -> Runner: Generate RUN_ID and RUN_DIR\nWrite metadata.json
+Runner -> BenchClient: Invoke benchmark workload
+BenchClient -> SUT: Send benchmark requests
+SUT --> BenchClient: Return responses
+BenchClient -> RunDir: Write latency/timing artifacts
+
+SUT -> Emitter: Emit runtime events/telemetry (optional)
+Emitter -> RunDir: Write events.jsonl / telemetry.json / extra_metrics.json
+
+Runner -> Collector: Build collected_metrics.json from run dir
+Collector -> EventAgg: Parse and derive event-based metrics (if events exist)
+EventAgg --> Collector: reliability/disaggregation/CRDT-derived metrics
+Collector -> RunDir: Write collected_metrics.json
+
+Researcher -> Normalizer: Normalize collected metrics
+Normalizer -> RunDir: Load collected_metrics.json (+ strict event checks)
+Normalizer -> CommonOut: Write normalized JSONL/CSV
+
+CommonOut --> Researcher: Cross-system comparable metrics
+@enduml

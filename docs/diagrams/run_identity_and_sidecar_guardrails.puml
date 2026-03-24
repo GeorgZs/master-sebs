@@ -1,0 +1,49 @@
+@startuml run_identity_and_sidecar_guardrails.puml
+title Run Identity and Sidecar Guardrails
+
+start
+
+:Runner starts;
+:Generate RUN_ID and RUN_DIR;
+
+if (RUN_ID empty?) then (yes)
+  :Fail fast;
+  stop
+else (no)
+endif
+
+:Map env vars to canonical paths;
+note right
+Boki:
+- BOKI_EVENTS_JSONL_PATH <-> BOKI_EVENTS_JSONL
+- BOKI_RUN_ID defaults to RUN_ID
+
+Cloudburst:
+- CB_EVENTS_JSONL_PATH <-> CB_EVENTS_JSONL
+- CB_RUN_ID defaults to RUN_ID
+end note
+
+:Execute benchmark workload;
+
+if (Sidecar exists?) then (yes)
+  :Copy to run-scoped file;
+  :Copy/alias to canonical filename;
+else (no)
+  :Proceed without sidecar metrics;
+endif
+
+if (events.jsonl present?) then (yes)
+  :Smoke-check JSONL parse;
+  :Check expected event types;
+  :Check run_id consistency;
+  if (check fails?) then (yes)
+    :Fail run before normalization;
+    stop
+  endif
+endif
+
+:Run collector;
+:Run normalizer;
+
+stop
+@enduml

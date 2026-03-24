@@ -1,0 +1,81 @@
+@startuml instrumentation_architecture.puml
+title Forked Runtime Instrumentation to SeBS Metrics Pipeline
+
+package "Forked Repos" {
+  component bokiFork as "master-boki"
+  component cbFork as "master-cloudburst"
+}
+
+package "Runtime Deployment" {
+  component baselineRuntime as "Baseline API Runtime"
+  component bokiRuntime as "Boki Runtime"
+  component cbScheduler as "Cloudburst Scheduler"
+  component cbExecutor as "Cloudburst Executor"
+  component annaKvs as "Anna KVS"
+}
+
+package "Per-run Sidecars" {
+  artifact eventsFile as "events.jsonl"
+  artifact telemetryFile as "telemetry.json"
+  artifact extraMetricsFile as "extra_metrics.json"
+}
+
+package "master-sebs" {
+  component benchmarks as "Benchmarks"
+  component baselineBench as "benchmark: baseline path"
+  component bokiBench as "benchmark: boki-shared-log path"
+  component cloudburstBench as "benchmark: cloudburst-stateful path"
+  component runBaseline as "run_baseline_bench.sh"
+  component runBoki as "run_boki_bench.sh"
+  component runCb as "run_cloudburst_bench.sh"
+  component collectHttp as "collect_http_run.py"
+  component collectCb as "collect_cloudburst_results.py"
+  component eventMetrics as "event_metrics.py"
+  component baselineNorm as "baseline_to_common_schema.py"
+  component bokiNorm as "boki_to_common_schema.py"
+  component cbNorm as "cloudburst_to_common_schema.py"
+  database normalized as "Normalized JSONL/CSV"
+}
+
+benchmarks --> baselineBench
+benchmarks --> bokiBench
+benchmarks --> cloudburstBench
+
+baselineBench --> runBaseline
+bokiBench --> runBoki
+cloudburstBench --> runCb
+
+bokiFork --> bokiRuntime
+cbFork --> cbScheduler
+cbFork --> cbExecutor
+cbFork --> annaKvs
+
+baselineRuntime --> eventsFile
+bokiRuntime --> eventsFile
+cbScheduler --> eventsFile
+cbExecutor --> eventsFile
+annaKvs --> eventsFile
+cbScheduler --> telemetryFile
+cbScheduler --> extraMetricsFile
+
+runBaseline --> collectHttp
+runBoki --> collectHttp
+runCb --> collectCb
+
+eventsFile --> collectHttp
+eventsFile --> collectCb
+telemetryFile --> collectHttp
+telemetryFile --> collectCb
+extraMetricsFile --> collectCb
+
+collectHttp --> eventMetrics
+collectCb --> eventMetrics
+
+collectHttp --> baselineNorm
+collectHttp --> bokiNorm
+collectCb --> cbNorm
+baselineNorm --> normalized
+bokiNorm --> normalized
+cbNorm --> normalized
+
+@enduml

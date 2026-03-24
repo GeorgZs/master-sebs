@@ -1,0 +1,29 @@
+@startuml event_join_policy.puml
+title Event Join Policy in Normalization
+
+actor User
+participant "boki_to_common_schema.py / cloudburst_to_common_schema.py" as Normalizer
+participant "collected_metrics.json" as Collected
+participant "events.jsonl" as Events
+
+User -> Normalizer: run normalization
+Normalizer -> Collected: load payload
+Normalizer -> Events: load events from source.run_dir
+
+alt no events file
+  Normalizer -> Normalizer: continue (no event checks)
+else events file exists
+  Normalizer -> Normalizer: validate_event_records(required_run_id, expected_types)
+  alt validation OK
+    Normalizer -> Normalizer: continue normalization
+  else validation failed
+    alt --allow-time-window-fallback set
+      Normalizer -> User: warn and continue
+    else strict default
+      Normalizer -> User: raise RuntimeError and stop
+    end
+  end
+end
+
+Normalizer -> User: write JSONL + CSV outputs
+@enduml
