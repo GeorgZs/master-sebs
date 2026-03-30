@@ -1,3 +1,16 @@
+"""
+DEAD CODE — This Python stub is NOT deployed to Boki.
+
+Boki's shared log API (BokiStore, BokiQueue in slib/lib.go) is Go-only.
+The real Boki benchmark is a Go binary registered with the Boki Launcher
+and lives in master-boki/benchmarks/stateful/.  SeBS sends HTTP requests
+to the Boki gateway; the Go function handles log operations and returns
+a JSON response matching the SeBS ExecutionResult format.
+
+This file exists only as a SeBS directory placeholder.  Do not fix its
+response format — it will never be invoked.
+"""
+
 import hashlib
 import time
 
@@ -13,6 +26,11 @@ def _to_bytes(value):
 
 
 def handler(event):
+    raise NotImplementedError(
+        "Boki functions are Go binaries, not Python. "
+        "See master-boki/benchmarks/stateful/ for the real implementation."
+    )
+
     begin = time.perf_counter_ns()
 
     payload = event.get("payload", "")
