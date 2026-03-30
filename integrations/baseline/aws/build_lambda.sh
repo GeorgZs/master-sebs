@@ -12,4 +12,13 @@ python3 -m pip install -r "${DIR}/lambda/requirements.txt" -t "${PKG}" --only-bi
 
 cp "${DIR}/lambda/handler.py" "${PKG}/"
 
+# Copy the SeBS benchmark function so handler.py can import it.
+BENCH_FN="${DIR}/../../../benchmarks/900.stateful/baseline-lambda-redis/python/function.py"
+if [[ -f "${BENCH_FN}" ]]; then
+  cp "${BENCH_FN}" "${PKG}/function.py"
+else
+  echo "ERROR: benchmark function not found at ${BENCH_FN}" >&2
+  exit 1
+fi
+
 echo "Built ${PKG} (ready for terraform archive_file)."

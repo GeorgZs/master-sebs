@@ -1,10 +1,10 @@
 import json
-import os
 
-import redis
+from function import handler as benchmark_handler
 
 
 def _parse_body(event):
+    """Extract the benchmark payload from an API Gateway v2 event."""
     if not isinstance(event, dict):
         return {}
     body_raw = event.get("body")
@@ -24,23 +24,9 @@ def _parse_body(event):
 
 def handler(event, context):
     body = _parse_body(event)
-    key = body.get("key", "baseline:counter")
-
-    host = os.environ["REDIS_HOST"]
-    port = int(os.environ.get("REDIS_PORT", "6379"))
-
-    client = redis.Redis(
-        host=host,
-        port=port,
-        decode_responses=True,
-        socket_connect_timeout=5,
-        socket_timeout=5,
-    )
-    val = client.incr(key)
-    out = {"ok": True, "key": key, "value": val}
-
+    result = benchmark_handler(body)
     return {
         "statusCode": 200,
         "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(out),
+        "body": json.dumps(result),
     }
