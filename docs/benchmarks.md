@@ -14,6 +14,9 @@
 | Scientific      | 502.graph-mst    | Python    | x64, arm64 | Minimum spanning tree (MST)  implementation with igraph. |
 | Scientific      | 503.graph-bfs    | Python    | x64, arm64 | Breadth-first search (BFS) implementation with igraph. |
 | Scientific      | 504.dna-visualisation    | Python   | x64, arm64 | Creates a visualization data for DNA sequence. |
+| Stateful        | 900.baseline-lambda-redis | Python  | x64 | Lambda + ElastiCache Redis stateful benchmark (SET/GET + compute). |
+| Stateful        | 900.cloudburst-stateful   | Python  | x64 | Native Cloudburst executor with Anna KVS (put/get + compute). |
+| Stateful        | 900.boki-shared-log       | Go      | x64 | Boki shared log benchmark via Go binary (Python stub is dead code). |
 
 Below, we discuss the most important implementation details of each benchmark. For more details on benchmark selection and their characterization, please refer to [our paper](../README.md#publication).
 

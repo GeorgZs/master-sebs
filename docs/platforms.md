@@ -17,6 +17,8 @@ Supported platforms:
 * [Microsoft Azure Functions](#azure-functions)
 * [Google Cloud (GCP) Functions](#google-cloud-functions)
 * [OpenWhisk](#openwhisk)
+* [Boki (self-hosted, EC2)](#boki)
+* [Cloudburst (self-hosted, EC2)](#cloudburst)
 
 ## Storage Configuration
 
@@ -288,3 +290,57 @@ To use that feature in SeBS, set the `experimentalManifest` flag to true.
 
 OpenWhisk has a `shutdownStorage` switch that controls the behavior of SeBS.
 When set to true, SeBS will remove the Minio instance after finishing all work.
+
+## Boki
+
+Boki is a self-hosted stateful serverless runtime based on a shared log abstraction (SOSP '21). It is deployed on EC2 via Terraform (`integrations/boki/aws/`). SeBS does not manage Boki's lifecycle — it sends HTTP requests to the Boki gateway, and the Go benchmark binary handles shared log operations.
+
+### Infrastructure
+
+Deployed as 7 EC2 instances: ZooKeeper, Controller, Sequencer, Storage, Engine, Gateway, Client. All in a dedicated VPC (`10.40.0.0/16`). Services are started manually via SSH (`enable_auto_start = false`).
+
+### Benchmark
+
+The Boki benchmark is a **Go binary** (not Python) because the shared log API (`BokiStore`, `BokiQueue` in `slib/lib.go`) is Go-only. The Python stub in `benchmarks/900.stateful/boki-shared-log/python/function.py` is dead code. The Go binary is registered with the Boki Launcher and returns JSON responses matching the SeBS `ExecutionResult` format.
+
+### Deployment
+
+```bash
+cd integrations/boki/aws/
+# Set key_pair_name and admin_cidr in terraform.tfvars
+terraform init && terraform plan && terraform apply
+```
+
+## Cloudburst
+
+Cloudburst is a self-hosted stateful serverless runtime with co-located caching via Anna KVS (VLDB '20). Deployed on EC2 via Terraform (`integrations/cloudburst/aws/`).
+
+### Infrastructure
+
+Deployed as 5 EC2 instances: Anna KVS, Scheduler, Client, and Executor x2 (Auto Scaling Group, min 1 / desired 2 / max 4). All in a dedicated VPC (`10.30.0.0/16`).
+
+### Benchmark
+
+The benchmark function follows Cloudburst's native executor convention:
+
+```python
+def stateful_benchmark(cloudburst, state_key, state_size_kb, ops, request_id):
+    cloudburst.put(state_key, blob)   # Anna KVS write
+    cloudburst.get(state_key)          # Anna KVS read
+    # ... lightweight compute ...
+    return {"request_id": ..., "is_cold": False, "begin": ..., "end": ..., "measurement": {...}}
+```
+
+A benchmark runner module (`master-cloudburst/cloudburst/server/benchmarks/stateful.py`) registers the function and runs it via `CloudburstConnection`. Invoke via the integration runner:
+
+```bash
+STATE_SIZE_KB=64 ./integrations/cloudburst/run_cloudburst_bench.sh stateful 200
+```
+
+### Deployment
+
+```bash
+cd integrations/cloudburst/aws/
+# Set key_pair_name and admin_cidr in terraform.tfvars
+terraform init && terraform plan && terraform apply
+```
