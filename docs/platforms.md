@@ -313,11 +313,42 @@ terraform init && terraform plan && terraform apply
 
 ## Cloudburst
 
-Cloudburst is a self-hosted stateful serverless runtime with co-located caching via Anna KVS (VLDB '20). Deployed on EC2 via Terraform (`integrations/cloudburst/aws/`).
+Cloudburst is a self-hosted stateful serverless runtime with co-located caching via [Anna KVS](https://github.com/hydro-project/anna) (VLDB '20). Upstream repo: [hydro-project/cloudburst](https://github.com/hydro-project/cloudburst). Deployed on EC2 via Terraform (`integrations/cloudburst/aws/`).
+
+For architecture diagrams, see:
+- [diagrams/cloudburst\_architecture.puml](diagrams/cloudburst_architecture.puml) — deployment topology
+- [diagrams/cloudburst\_benchmark\_flow.puml](diagrams/cloudburst_benchmark_flow.puml) — per-invocation sequence
+- [diagrams/three\_system\_comparison.puml](diagrams/three_system_comparison.puml) — comparison with Lambda+Redis and Boki
 
 ### Infrastructure
 
-Deployed as 5 EC2 instances: Anna KVS, Scheduler, Client, and Executor x2 (Auto Scaling Group, min 1 / desired 2 / max 4). All in a dedicated VPC (`10.30.0.0/16`).
+Deployed as 5 EC2 instances + Anna KVS Docker containers:
+
+| Node | Instance | Role |
+|------|----------|------|
+| Scheduler | `t3.medium` | Dispatches function calls to executors via ZMQ |
+| Executor x2 | `t3.medium` (ASG) | Runs benchmark functions, accesses Anna KVS |
+| Anna KVS | `t3.medium` | State storage — 3 Docker containers (route, kvs, monitor) |
+| Client | `t3.small` | Benchmark driver, runs `run_benchmark.py` |
+
+All in a dedicated VPC (`10.30.0.0/16`). Cluster-internal traffic via ZMQ (ports 4000-6000) and Anna KVS (port 6450).
+
+### Anna KVS
+
+Anna KVS is a C++ lattice-based distributed KVS. It is **not** bundled with Cloudburst and must be deployed separately. We run it as Docker containers built from `base_systems/anna/dockerfiles/anna.dockerfile` (base image: `hydroproject/base:latest`).
+
+Single-node deployment uses `local=True` mode which bypasses Anna's routing tier and communicates directly with the KVS process on port 6450. This is sufficient for benchmarking but does not exercise Anna's replication or multi-node features.
+
+```bash
+# Build Anna Docker image on the Anna EC2 node
+cd /tmp && git clone --recurse-submodules https://github.com/hydro-project/anna
+cd anna/dockerfiles && docker build -f anna.dockerfile -t anna:local .
+
+# Run Anna processes
+docker run -d --name anna-route   --network host -v /tmp/anna-conf/anna-config.yml:/hydro/anna/conf/anna-config.yml anna:local bash -c "cd /hydro/anna && ./build/target/kvs/anna-route"
+docker run -d --name anna-kvs     --network host -v /tmp/anna-conf/anna-config.yml:/hydro/anna/conf/anna-config.yml anna:local bash -c "cd /hydro/anna && ./build/target/kvs/anna-kvs"
+docker run -d --name anna-monitor --network host -v /tmp/anna-conf/anna-config.yml:/hydro/anna/conf/anna-config.yml anna:local bash -c "cd /hydro/anna && ./build/target/kvs/anna-monitor"
+```
 
 ### Benchmark
 
@@ -331,10 +362,20 @@ def stateful_benchmark(cloudburst, state_key, state_size_kb, ops, request_id):
     return {"request_id": ..., "is_cold": False, "begin": ..., "end": ..., "measurement": {...}}
 ```
 
-A benchmark runner module (`master-cloudburst/cloudburst/server/benchmarks/stateful.py`) registers the function and runs it via `CloudburstConnection`. Invoke via the integration runner:
+A benchmark runner module (`master-cloudburst/cloudburst/server/benchmarks/stateful.py`) registers the function and runs it via `CloudburstConnection`. Invoke:
 
 ```bash
-STATE_SIZE_KB=64 ./integrations/cloudburst/run_cloudburst_bench.sh stateful 200
+CLOUDBURST_LOCAL=true STATE_SIZE_KB=64 python3 cloudburst/client/run_benchmark.py stateful <scheduler_ip> <num_requests> <client_ip>
+```
+
+### Deployment
+
+```bash
+cd integrations/cloudburst/aws/
+# Set key_pair_name and admin_cidr in terraform.tfvars
+terraform init && terraform plan && terraform apply
+# Then deploy Anna KVS Docker containers on the Anna node (see above)
+# Start scheduler, executors manually or set enable_auto_start = true
 ```
 
 ### Deployment
