@@ -1,0 +1,74 @@
+@startuml cloudburst_architecture
+!theme plain
+title Cloudburst Stateful Serverless — Deployment Architecture
+
+skinparam rectangle {
+    BackgroundColor<<ec2>> #E8F4FD
+    BackgroundColor<<docker>> #FFF3E0
+    BackgroundColor<<zmq>> #F3E5F5
+}
+
+package "VPC 10.30.0.0/16 (eu-north-1)" {
+
+    rectangle "Client Node\nt3.small" as client <<ec2>> {
+        component "run_benchmark.py" as bench
+        component "CloudburstConnection\n(ZMQ REQ)" as cc
+    }
+
+    rectangle "Scheduler Node\nt3.medium" as sched <<ec2>> {
+        component "scheduler/server.py" as scheduler
+        component "AnnaTcpClient\n(local=True)" as sched_anna
+        note right of scheduler
+            ZMQ ports 5000-5011
+            Dispatches function calls
+            to executors via ZMQ PUSH
+        end note
+    }
+
+    rectangle "Executor 1\nt3.medium (ASG)" as exec1 <<ec2>> {
+        component "executor/server.py" as executor1
+        component "CloudburstUserLibrary" as ulib1
+        component "AnnaTcpClient\n(local=True)" as exec1_anna
+    }
+
+    rectangle "Executor 2\nt3.medium (ASG)" as exec2 <<ec2>> {
+        component "executor/server.py" as executor2
+        component "CloudburstUserLibrary" as ulib2
+        component "AnnaTcpClient\n(local=True)" as exec2_anna
+    }
+
+    rectangle "Anna KVS Node\nt3.medium" as anna_node <<ec2>> {
+        rectangle "Docker Containers" <<docker>> {
+            component "anna-kvs\n(memory mode)" as kvs
+            component "anna-route" as route
+            component "anna-monitor" as monitor
+        }
+        note right of anna_node
+            Port 6450: routing
+            Ports 6000-7100: KVS
+            Config: anna-local.yml
+            local=True bypasses
+            routing tier
+        end note
+    }
+}
+
+' Client -> Scheduler (ZMQ)
+cc -down-> scheduler : "ZMQ REQ/REP\nport 5000 (connect)\nport 5001 (register)\nport 5002 (call)"
+
+' Scheduler -> Executors (ZMQ PUSH)
+scheduler -down-> executor1 : "ZMQ PUSH\npin/exec functions"
+scheduler -down-> executor2 : "ZMQ PUSH\npin/exec functions"
+
+' Executors -> Anna (TCP, port 6450)
+exec1_anna -down-> kvs : "TCP port 6450\nput/get state"
+exec2_anna -down-> kvs : "TCP port 6450\nput/get state"
+
+' Scheduler -> Anna (for function storage)
+sched_anna -down-> kvs : "TCP port 6450\nstore function code"
+
+' Executor status -> Scheduler
+executor1 -up-> scheduler : "ZMQ PUSH\nstatus updates (5s)"
+executor2 -up-> scheduler : "ZMQ PUSH\nstatus updates (5s)"
+
+@enduml

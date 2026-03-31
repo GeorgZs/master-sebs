@@ -1,0 +1,62 @@
+@startuml three_system_comparison
+!theme plain
+title Stateful Serverless — Three-System Architecture Comparison
+
+skinparam rectangle {
+    BackgroundColor<<aws>> #FFF8E1
+    BackgroundColor<<cloudburst>> #E8F5E9
+    BackgroundColor<<boki>> #E3F2FD
+}
+
+package "Baseline: Lambda + ElastiCache Redis" <<aws>> {
+    component "API Gateway\n(HTTP)" as apigw
+    component "AWS Lambda\n(Python 3.12)" as lambda
+    database "ElastiCache Redis\n(cache.t4g.micro)" as redis
+
+    apigw -right-> lambda : "HTTP POST"
+    lambda -right-> redis : "SET/GET\n(redis-py pool)"
+}
+
+package "Cloudburst + Anna KVS" <<cloudburst>> {
+    component "Client\n(ZMQ)" as cb_client
+    component "Scheduler\n(ZMQ)" as cb_sched
+    component "Executor(s)\n(ZMQ)" as cb_exec
+    database "Anna KVS\n(Docker, memory)" as cb_anna
+
+    cb_client -right-> cb_sched : "register/call"
+    cb_sched -right-> cb_exec : "pin/exec"
+    cb_exec -right-> cb_anna : "put/get\n(TCP 6450)"
+}
+
+package "Boki (shared log)" <<boki>> {
+    component "HTTP Gateway" as boki_gw
+    component "Engine + Workers\n(Go binary)" as boki_engine
+    database "Shared Log\n(Sequencer + Storage)" as boki_log
+    component "ZooKeeper" as boki_zk
+
+    boki_gw -right-> boki_engine : "IPC"
+    boki_engine -right-> boki_log : "slib API\n(append/read)"
+    boki_engine .right.> boki_zk : "coordination"
+}
+
+note bottom of redis
+    **State model:** External KV (network)
+    **Managed:** Yes (AWS)
+    **Scales to zero:** Yes
+end note
+
+note bottom of cb_anna
+    **State model:** Co-located cache + KVS
+    **Managed:** No (self-hosted EC2)
+    **Scales to zero:** No
+    Ref: github.com/hydro-project/cloudburst
+end note
+
+note bottom of boki_log
+    **State model:** External append-only log
+    **Managed:** No (self-hosted EC2)
+    **Scales to zero:** No
+    Ref: github.com/ut-osa/boki (SOSP '21)
+end note
+
+@enduml

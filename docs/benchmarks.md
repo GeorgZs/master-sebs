@@ -87,6 +87,8 @@ This benchmark is inspired by the [DNAVisualization](https://github.com/Benjamin
 
 The `900.stateful` benchmark suite compares stateful serverless runtimes. Each benchmark performs a configurable KV state read/write plus lightweight compute and returns standardised timing in the SeBS `ExecutionResult` format (`request_id`, `is_cold`, `begin`, `end`, `measurement`).
 
+For an architectural overview of all three systems, see [diagrams/three\_system\_comparison.puml](diagrams/three_system_comparison.puml).
+
 State size tiers: `test` = 1 KB, `small` = 64 KB, `large` = 512 KB.
 
 | Benchmark | System | State Backend | Invocation Path |
@@ -105,13 +107,30 @@ Deployed via Terraform (`integrations/baseline/aws/`). The benchmark function (`
 
 Deployed via Terraform (`integrations/cloudburst/aws/`). The benchmark function follows the Cloudburst executor convention: `def stateful_benchmark(cloudburst, state_key, state_size_kb, ops, request_id)` where `cloudburst` is the user\_library object injected by the executor.
 
+**Architecture:** Cloudburst uses a Scheduler + Executor + Anna KVS topology. The scheduler dispatches function calls to executors via ZMQ. Executors run the benchmark function and access state through the `CloudburstUserLibrary` which wraps Anna KVS operations. See [diagrams/cloudburst\_architecture.puml](diagrams/cloudburst_architecture.puml) for the full deployment diagram and [diagrams/cloudburst\_benchmark\_flow.puml](diagrams/cloudburst_benchmark_flow.puml) for the per-invocation sequence.
+
+**Anna KVS dependency:** Cloudburst requires [Anna KVS](https://github.com/hydro-project/anna) (a C++ distributed KVS) as its state backend. Anna is deployed as Docker containers on a dedicated EC2 node (routing + KVS + monitor processes). In single-node benchmarking mode, Cloudburst uses `local=True` which bypasses Anna's routing tier and talks directly to the KVS on port 6450.
+
+**Key patches applied to upstream Cloudburst ([hydro-project/cloudburst](https://github.com/hydro-project/cloudburst)):**
+- `executor/server.py`: read `anna.private_ip` from config instead of hardcoding `127.0.0.1` in local mode.
+- `client/run_benchmark.py`: accept `CLOUDBURST_LOCAL=true` env var for remote single-node Anna deployments.
+- `server/benchmarks/stateful.py`: new benchmark module for SeBS-compatible stateful workload.
+
 A benchmark runner module (`master-cloudburst/cloudburst/server/benchmarks/stateful.py`) registers the function with the Cloudburst scheduler and runs it via `CloudburstConnection`. It is invoked as:
 
 ```bash
-STATE_SIZE_KB=64 ./integrations/cloudburst/run_cloudburst_bench.sh stateful 200
+CLOUDBURST_LOCAL=true STATE_SIZE_KB=64 python3 cloudburst/client/run_benchmark.py stateful <scheduler_ip> <num_requests> <client_ip>
+```
+
+Or via the integration runner:
+
+```bash
+CLOUDBURST_LOCAL=true STATE_SIZE_KB=64 ./integrations/cloudburst/run_cloudburst_bench.sh stateful 200
 ```
 
 Output is parsed by `collect_cloudburst_results.py` and normalized via `cloudburst_to_common_schema.py`.
+
+**Preliminary results (64KB state, 5 invocations):** E2E median 21ms, scheduler overhead ~1ms, KVS latency ~20ms. See [PRELIM\_RESULTS.md](../../PRELIM_RESULTS.md) for full data.
 
 ### Boki Shared Log
 

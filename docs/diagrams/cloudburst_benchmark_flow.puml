@@ -1,0 +1,54 @@
+@startuml cloudburst_benchmark_flow
+!theme plain
+title Cloudburst Stateful Benchmark — Invocation Flow
+
+actor "Client\n(run_benchmark.py)" as client
+participant "Scheduler\n(server.py)" as sched
+participant "Executor\n(server.py)" as exec
+database "Anna KVS\n(Docker)" as anna
+
+== Function Registration ==
+client -> sched : register(stateful_bench)\n[ZMQ REQ port 5001]
+sched -> anna : put("funcs/stateful_bench", pickled_fn)\n[TCP port 6450]
+anna --> sched : OK
+sched --> client : CloudburstFunction handle
+
+== Function Pin (first call) ==
+sched -> exec : pin("stateful_bench")\n[ZMQ PUSH port 4000]
+exec -> anna : get("funcs/stateful_bench")\n[TCP port 6450]
+anna --> exec : pickled function code
+exec -> exec : unpickle & cache locally
+
+== Benchmark Invocation (per request) ==
+client -> sched : call_function(rid)\n[ZMQ REQ port 5002]
+sched -> exec : exec(rid, args)\n[ZMQ PUSH port 5003]
+
+group stateful_bench execution
+    exec -> exec : begin = time.time()
+    exec -> anna : put(state_key, 64KB blob)\n[TCP port 6450]
+    anna --> exec : OK
+    exec -> exec : state_write_lat_us
+    exec -> anna : get(state_key)\n[TCP port 6450]
+    anna --> exec : 64KB blob
+    exec -> exec : state_read_lat_us
+    exec -> exec : lightweight compute
+    exec -> exec : end = time.time()
+end
+
+exec -> anna : put(response_key, result)\n[TCP port 6450]
+anna --> exec : OK
+client -> anna : get(response_key)\n[TCP port 6450]
+anna --> client : result dict
+
+note right of client
+    Result contains:
+    - request_id
+    - is_cold: false
+    - begin / end timestamps
+    - measurement block
+      (state_read/write_lat_us,
+       compute_time_us,
+       state_size_kb)
+end note
+
+@enduml
