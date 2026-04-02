@@ -204,6 +204,16 @@ class Config(ABC, LoggingBase):
             from sebs.openwhisk.config import OpenWhiskConfig
 
             implementations["openwhisk"] = OpenWhiskConfig.deserialize
+
+        if has_platform("boki"):
+            from sebs.boki.config import BokiConfig
+
+            implementations["boki"] = BokiConfig.deserialize
+
+        if has_platform("cloudburst"):
+            from sebs.cloudburst_provider.config import CloudburstConfig
+
+            implementations["cloudburst"] = CloudburstConfig.deserialize
         func = implementations.get(name)
         assert func, "Unknown config type!"
         return func(config[name] if name in config else config, cache, handlers)

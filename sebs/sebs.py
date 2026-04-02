@@ -107,6 +107,16 @@ class SeBS(LoggingBase):
 
             implementations["openwhisk"] = OpenWhisk
 
+        if has_platform("boki"):
+            from sebs.boki import Boki
+
+            implementations["boki"] = Boki
+
+        if has_platform("cloudburst"):
+            from sebs.cloudburst_provider import Cloudburst
+
+            implementations["cloudburst"] = Cloudburst
+
         if name not in implementations:
             raise RuntimeError("Deployment {name} not supported!".format(name=name))
 
