@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# Engine node: runs Boki Engine + Launcher + Worker.
+# Connects to ZK on the infrastructure node to register.
+# Gateway discovers this engine via ZK and dispatches function calls to it.
+#
+# Worker communicates with Engine via IPC (shared tmpfs volume),
+# so both must be on the same host.
+set -euxo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y docker.io docker-compose jq awscli
+
+systemctl enable --now docker
+usermod -aG docker ubuntu
+
+# Pull official Boki image
+docker pull zjia/boki:sosp-ae
+
+# Set up workspace
+mkdir -p /opt/boki/workspace/output
+
+# Detect the primary network interface (ens5 on Ubuntu EC2)
+HOST_IFACE=$(ip -o route get 1 | awk '{print $5}')
+echo "Detected host interface: $HOST_IFACE" | tee /opt/boki/HOST_IFACE
+
+# Derive a unique node ID from this instance's private IP.
+# Each EC2 in the VPC gets a unique IP, so (3rd_octet * 256 + 4th_octet) is unique.
+PRIVATE_IP=$(hostname -I | awk '{print $1}')
+NODE_ID=$(echo "$PRIVATE_IP" | awk -F. '{print ($3 * 256) + $4}')
+echo "Engine NODE_ID=$NODE_ID (derived from $PRIVATE_IP)" | tee /opt/boki/NODE_ID
+
+# func_config — must match what the gateway has
+cat > /opt/boki/workspace/func_config.json << 'FCONF'
+[
+  {"funcName":"statefulBench","funcId":1,"minWorkers":1,"maxWorkers":8,"defaultLogSpace":0,"allowHttpGet":true,"qsAsInput":true}
+]
+FCONF
+
+# Launcher wrapper
+cat > /opt/boki/workspace/run_launcher << 'LAUNCHER'
+#!/bin/bash
+/boki/launcher \
+    --fprocess_mode=go \
+    --root_path_for_ipc=/tmp/boki/ipc \
+    --fprocess_output_dir=/opt/bench/output \
+    --fprocess="$1" \
+    --func_id=$2
+LAUNCHER
+chmod +x /opt/boki/workspace/run_launcher
+
+# Optional: download bench binary from S3
+%{ if bench_binary_s3_uri != "" ~}
+aws s3 cp "${bench_binary_s3_uri}" /opt/boki/workspace/stateful_bench
+chmod +x /opt/boki/workspace/stateful_bench
+%{ endif ~}
+
+# Docker compose for this engine node.
+# Uses host networking so the engine advertises the EC2 private IP to ZK,
+# making it reachable from the gateway on the infra node.
+# IPC uses a Docker named tmpfs volume (engine cleans it on startup).
+cat > /opt/boki/workspace/docker-compose.yml << COMPOSE
+version: "2.4"
+services:
+  boki-engine:
+    container_name: boki-engine
+    image: zjia/boki:sosp-ae
+    privileged: true
+    network_mode: host
+    entrypoint:
+      - /boki/engine
+      - --zookeeper_host=${zk_host}:2181
+      - --listen_iface=$HOST_IFACE
+      - --root_path_for_ipc=/tmp/boki/ipc
+      - --func_config_file=/tmp/boki/func_config.json
+      - --num_io_workers=4
+      - --io_uring_entries=2048
+      - --io_uring_fd_slots=4096
+      - --enable_shared_log
+      - --slog_engine_enable_cache
+      - --slog_engine_cache_cap_mb=1024
+    volumes:
+      - boki-ipc:/tmp/boki
+      - /opt/boki/workspace/func_config.json:/tmp/boki/func_config.json
+    environment:
+      FAAS_NODE_ID: $NODE_ID
+    restart: always
+  stateful-bench:
+    container_name: boki-worker
+    image: zjia/boki:sosp-ae
+    privileged: true
+    network_mode: host
+    entrypoint: ["/opt/bench/run_launcher", "/opt/bench/stateful_bench", "1"]
+    volumes:
+      - boki-ipc:/tmp/boki
+      - /opt/boki/workspace/run_launcher:/opt/bench/run_launcher
+      - /opt/boki/workspace/stateful_bench:/opt/bench/stateful_bench
+      - /opt/boki/workspace/output:/opt/bench/output
+    environment:
+      FAAS_GO_MAX_PROC_FACTOR: 4
+      GOGC: 1000
+    depends_on: [boki-engine]
+    restart: always
+volumes:
+  boki-ipc:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=2g
+COMPOSE
+
+chown -R ubuntu:ubuntu /opt/boki
+
+cat > /opt/boki/READY << EOF
+Boki engine node ready (NODE_ID=$NODE_ID).
+ZK target: ${zk_host}:2181
+
+To start (after uploading stateful_bench if not using S3):
+  cd /opt/boki/workspace && docker-compose up -d
+
+Bench binary location: /opt/boki/workspace/stateful_bench
+EOF

@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+# Infrastructure node: ZK, Controller, 2x Sequencer, Storage, Gateway.
+# Engine nodes are on separate EC2 instances and connect via ZK.
+#
+# All containers use host networking so they advertise the EC2 private IP
+# in ZK, making them reachable from engine nodes on other EC2 instances.
+set -euxo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y docker.io docker-compose jq git
+
+systemctl enable --now docker
+usermod -aG docker ubuntu
+
+# Pull images
+docker pull zjia/boki:sosp-ae
+docker pull zookeeper:3.6.2
+
+# Detect the primary network interface (ens5 on Ubuntu EC2, eth0 in Docker)
+HOST_IFACE=$(ip -o route get 1 | awk '{print $5}')
+echo "Detected host interface: $HOST_IFACE" | tee /opt/boki/HOST_IFACE
+
+# Set up workspace
+mkdir -p /opt/boki/workspace /mnt/storage
+
+# ZK setup script — waits for engines to register, then issues start.
+# With host networking, ZK is at localhost:2181.
+cat > /opt/boki/workspace/zk_setup.sh << 'ZKSCRIPT'
+#!/bin/bash
+export ZOO_LOG4J_PROP="WARN,CONSOLE"
+SERVER="localhost:2181"
+
+# Wait for ZK to be ready
+for i in $(seq 1 30); do
+    echo "Waiting for ZooKeeper ($i/30)..."
+    echo ruok | nc -w 2 localhost 2181 && break
+    sleep 2
+done
+
+./bin/zkCli.sh -server $SERVER <<EOF
+deleteall /faas
+create /faas
+create /faas/node
+create /faas/view
+create /faas/freeze
+create /faas/cmd
+quit
+EOF
+if [[ $? != 0 ]]; then
+    echo "Failed to setup zookeeper"
+    exit 1
+fi
+echo "ZK paths created. Waiting ${zk_setup_wait_seconds}s for all nodes to register..."
+sleep ${zk_setup_wait_seconds}
+./bin/zkCli.sh -server $SERVER create /faas/cmd/start
+echo "Start command issued."
+sleep infinity
+ZKSCRIPT
+chmod +x /opt/boki/workspace/zk_setup.sh
+
+# func_config — shared by gateway (on this node) and engines (remote)
+cat > /opt/boki/workspace/func_config.json << 'FCONF'
+[
+  {"funcName":"statefulBench","funcId":1,"minWorkers":1,"maxWorkers":8,"defaultLogSpace":0,"allowHttpGet":true,"qsAsInput":true}
+]
+FCONF
+
+# Manual start script
+cat > /opt/boki/start-cluster.sh << 'STARTSCRIPT'
+#!/bin/bash
+set -euo pipefail
+echo "Checking ZK nodes..."
+docker exec boki-zk ./bin/zkCli.sh -server localhost:2181 ls /faas/node 2>&1 | grep '^\['
+echo ""
+echo "Issuing /faas/cmd/start..."
+docker exec boki-zk ./bin/zkCli.sh -server localhost:2181 create /faas/cmd/start 2>&1 | grep -E 'Created|already'
+echo "Done."
+STARTSCRIPT
+chmod +x /opt/boki/start-cluster.sh
+
+# docker-compose.yml — all host networking for cross-machine reachability.
+# With host networking, all services bind directly on the EC2's ports.
+# ZK at localhost:2181, Boki services use the detected host interface.
+cat > /opt/boki/workspace/docker-compose.yml << COMPOSE
+version: "2.4"
+services:
+  zookeeper:
+    container_name: boki-zk
+    image: zookeeper:3.6.2
+    network_mode: host
+    environment:
+      ZOO_PORT: 2181
+      ZOO_4LW_COMMANDS_WHITELIST: "*"
+      ZOO_CFG_EXTRA: admin.enableServer=false
+    restart: always
+  zookeeper-setup:
+    container_name: boki-zk-setup
+    image: zookeeper:3.6.2
+    network_mode: host
+    command: /tmp/boki/zk_setup.sh
+    volumes:
+      - /opt/boki/workspace/zk_setup.sh:/tmp/boki/zk_setup.sh
+    depends_on: [zookeeper]
+    restart: always
+  boki-controller:
+    container_name: boki-controller
+    image: zjia/boki:sosp-ae
+    privileged: true
+    network_mode: host
+    entrypoint:
+      - /boki/controller
+      - --zookeeper_host=localhost:2181
+      - --metalog_replicas=${metalog_replicas}
+      - --userlog_replicas=1
+      - --index_replicas=1
+    depends_on: [zookeeper-setup]
+    restart: always
+  boki-gateway:
+    container_name: boki-gateway
+    image: zjia/boki:sosp-ae
+    privileged: true
+    network_mode: host
+    entrypoint:
+      - /boki/gateway
+      - --zookeeper_host=localhost:2181
+      - --listen_iface=$HOST_IFACE
+      - --http_port=${gateway_http_port}
+      - --func_config_file=/tmp/boki/func_config.json
+      - --num_io_workers=2
+      - --io_uring_entries=2048
+      - --io_uring_fd_slots=4096
+      - --lb_per_fn_round_robin
+      - --max_running_requests=0
+    volumes:
+      - /opt/boki/workspace/func_config.json:/tmp/boki/func_config.json
+    depends_on: [zookeeper-setup]
+    restart: always
+  boki-storage:
+    container_name: boki-storage
+    image: zjia/boki:sosp-ae
+    privileged: true
+    network_mode: host
+    entrypoint:
+      - /boki/storage
+      - --zookeeper_host=localhost:2181
+      - --listen_iface=$HOST_IFACE
+      - --db_path=/tmp/storage/logdata
+      - --num_io_workers=2
+      - --io_uring_entries=2048
+      - --io_uring_fd_slots=4096
+      - --slog_local_cut_interval_us=300
+      - --slog_storage_bgthread_interval_ms=1
+      - --slog_storage_backend=rocksdb
+      - --slog_storage_cache_cap_mb=4096
+    volumes:
+      - /mnt/storage:/tmp/storage
+    environment:
+      FAAS_NODE_ID: 1
+    depends_on: [zookeeper-setup]
+    restart: always
+  boki-sequencer-1:
+    container_name: boki-sequencer-1
+    image: zjia/boki:sosp-ae
+    privileged: true
+    network_mode: host
+    entrypoint:
+      - /boki/sequencer
+      - --zookeeper_host=localhost:2181
+      - --listen_iface=$HOST_IFACE
+      - --num_io_workers=2
+      - --io_uring_entries=2048
+      - --io_uring_fd_slots=4096
+      - --slog_global_cut_interval_us=300
+    environment:
+      FAAS_NODE_ID: 1
+    depends_on: [zookeeper-setup]
+    restart: always
+  boki-sequencer-2:
+    container_name: boki-sequencer-2
+    image: zjia/boki:sosp-ae
+    privileged: true
+    network_mode: host
+    entrypoint:
+      - /boki/sequencer
+      - --zookeeper_host=localhost:2181
+      - --listen_iface=$HOST_IFACE
+      - --num_io_workers=2
+      - --io_uring_entries=2048
+      - --io_uring_fd_slots=4096
+      - --slog_global_cut_interval_us=300
+    environment:
+      FAAS_NODE_ID: 2
+    depends_on: [zookeeper-setup]
+    restart: always
+COMPOSE
+
+chown -R ubuntu:ubuntu /opt/boki
+
+cat > /opt/boki/READY << EOF
+Boki infrastructure node ready (Ubuntu 20.04, host networking).
+Host interface: $HOST_IFACE
+Components: ZooKeeper, Controller, 2x Sequencer, Storage, Gateway.
+Engine nodes connect via ZK at this node's private IP on port 2181.
+
+To start:
+  cd /opt/boki/workspace && docker-compose up -d
+
+To manually issue start (if engines need more boot time):
+  /opt/boki/start-cluster.sh
+
+Gateway URL: http://<this-node-public-ip>:${gateway_http_port}
+EOF

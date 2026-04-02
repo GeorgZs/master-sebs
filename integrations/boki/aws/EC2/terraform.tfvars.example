@@ -1,0 +1,28 @@
+project_name = "boki-experimental"
+aws_region   = "eu-north-1"
+
+vpc_cidr            = "10.41.0.0/16"
+public_subnet_cidrs = ["10.41.1.0/24", "10.41.2.0/24"]
+admin_cidr          = "0.0.0.0/0"  # Restrict to your IP
+
+key_pair_name = "thesis-key"
+
+# Infrastructure node: ZK + Controller + 2x Sequencer + Storage + Gateway
+infra_instance_type = "c5.2xlarge"
+
+# Engine nodes (scalable compute)
+engine_instance_type    = "c5.xlarge"
+engine_min_size         = 1
+engine_desired_capacity = 2
+engine_max_size         = 4
+
+gateway_http_port = 8080
+metalog_replicas  = 2
+
+# How long ZK setup waits for engines to register before issuing /faas/cmd/start.
+# Increase if engines take longer to boot.
+zk_setup_wait_seconds = 120
+
+# Optional: S3 URI for pre-built stateful_bench Go binary.
+# If empty, upload manually to each engine node at /opt/boki/workspace/stateful_bench
+# bench_binary_s3_uri = "s3://your-bucket/stateful_bench"
