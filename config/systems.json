@@ -3,6 +3,50 @@
     "docker_repository": "spcleth/serverless-benchmarks",
     "SeBS_version": "1.2.0"
   },
+  "cloudburst": {
+    "experiments": {
+      "python": ["time"]
+    },
+    "languages": {
+      "python": {
+        "base_images": {
+          "x64": {
+            "3.9": "python:3.9-slim"
+          }
+        },
+        "images": [],
+        "username": "docker_user",
+        "deployment": {
+          "files": [],
+          "packages": []
+        }
+      }
+    },
+    "architecture": ["x64"],
+    "deployments": ["package"]
+  },
+  "boki": {
+    "experiments": {
+      "python": ["time"]
+    },
+    "languages": {
+      "python": {
+        "base_images": {
+          "x64": {
+            "3.9": "python:3.9-slim"
+          }
+        },
+        "images": [],
+        "username": "docker_user",
+        "deployment": {
+          "files": [],
+          "packages": []
+        }
+      }
+    },
+    "architecture": ["x64"],
+    "deployments": ["package"]
+  },
   "local": {
     "experiments": {
       "python": [

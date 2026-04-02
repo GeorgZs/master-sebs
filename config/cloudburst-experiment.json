@@ -1,0 +1,31 @@
+{
+  "experiments": {
+    "deployment": "cloudburst",
+    "update_code": false,
+    "update_storage": false,
+    "download_results": false,
+    "architecture": "x64",
+    "container_deployment": false,
+    "runtime": {
+      "language": "python",
+      "version": "3.9"
+    },
+    "perf-cost": {
+      "benchmark": "cloudburst-stateful",
+      "experiments": ["warm"],
+      "input-size": "test",
+      "repetitions": 50,
+      "concurrent-invocations": 1,
+      "memory-sizes": []
+    }
+  },
+  "deployment": {
+    "name": "cloudburst",
+    "cloudburst": {
+      "scheduler_ip": "13.62.226.107",
+      "client_ip": "0.0.0.0",
+      "local": true,
+      "cloudburst_path": "../master-cloudburst"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "experiments": {
+    "deployment": "boki",
+    "update_code": false,
+    "update_storage": false,
+    "download_results": false,
+    "architecture": "x64",
+    "container_deployment": false,
+    "runtime": {
+      "language": "python",
+      "version": "3.9"
+    },
+    "perf-cost": {
+      "benchmark": "boki-shared-log",
+      "experiments": [
+        "warm"
+      ],
+      "input-size": "small",
+      "repetitions": 1000,
+      "concurrent-invocations": 50,
+      "memory-sizes": []
+    }
+  },
+  "deployment": {
+    "name": "boki",
+    "boki": {
+      "gateway_url": "http://16.170.141.184:8080",
+      "function_name": "statefulBench"
+    }
+  }
+}
