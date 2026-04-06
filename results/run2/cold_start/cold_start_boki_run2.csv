@@ -1,0 +1,6 @@
+system,rep,restart_ms,first_invoke_ms,total_cold_ms
+boki,1,0,11192,11192
+boki,2,0,5548,5548
+boki,3,0,5550,5550
+boki,4,0,5546,5546
+boki,5,0,5553,5553
