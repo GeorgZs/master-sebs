@@ -268,7 +268,7 @@ def plot_cold_start():
 
     # Boki: from cold start CSV
     boki_cold = []
-    csv_path = SCRIPT_DIR.parent.parent / "cold_start_boki_run2.csv"
+    csv_path = RESULTS_DIR / "cold_start" / "cold_start_boki_run2.csv"
     if csv_path.exists():
         with open(csv_path) as f:
             for line in f:
