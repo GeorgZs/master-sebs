@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+# SeBS benchmark client for Lambda VPC.
+# Runs batch_invoke.py against Lambda via API Gateway (intra-region).
+
+dnf update -y
+# curl-minimal conflicts with curl on AL2023 — replace it
+dnf install -y --allowerasing git python3.11 python3.11-pip python3.11-devel libcurl-devel gcc curl jq
+
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="/root/.local/bin:$PATH"
+
+# Clone SeBS repo
+cd /home/ec2-user
+git clone https://github.com/GeorgZs/master-sebs.git
+cd master-sebs
+
+# Install Python dependencies (use python3.11 explicitly — AL2023 default is 3.9)
+python3.11 -m pip install pycurl numpy
+
+# Configure git for committing results
+git config user.email "sebs-client@ec2.aws"
+git config user.name "SeBS Cloud Client (Lambda)"
+
+chown -R ec2-user:ec2-user /home/ec2-user/master-sebs
+
+# Create results directory
+mkdir -p /home/ec2-user/master-sebs/results/cloud/lambda
+chown -R ec2-user:ec2-user /home/ec2-user/master-sebs/results
+
+# Write target endpoint config
+cat >/home/ec2-user/sebs-env.sh <<EOF
+export LAMBDA_API_URL=${api_endpoint}
+export RESULTS_DIR=/home/ec2-user/master-sebs/results/cloud/lambda
+EOF
+chown ec2-user:ec2-user /home/ec2-user/sebs-env.sh
+
+echo "SEBS_CLIENT_READY" > /tmp/sebs-client-ready

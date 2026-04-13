@@ -1,3 +1,5 @@
+# THIS IS THE DEPLOYED LAMBDA FUNCTION
+
 import os
 import time
 import uuid

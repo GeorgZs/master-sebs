@@ -27,3 +27,8 @@ output "http_api_endpoint" {
   value       = aws_apigatewayv2_stage.default.invoke_url
   description = "HTTP API base URL (POST or GET /)."
 }
+
+output "client_public_ip" {
+  value       = var.deploy_sebs_client ? aws_instance.client[0].public_ip : null
+  description = "SeBS benchmark client public IP (SSH access)."
+}

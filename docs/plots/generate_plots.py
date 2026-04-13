@@ -526,6 +526,325 @@ def plot_state_placement():
     print("  09_state_placement.png")
 
 
+# ── Plot 10: Scaling Timeline (Cloudburst) ──
+#
+# Boki scaling timeline was dropped because:
+# 1. The shell-based load generator produced sparse, bursty data (10 points per batch with
+#    long gaps) compared to the Python continuous generator used for Cloudburst (7020 even points)
+# 2. Boki's ZK discovery lifecycle prevents clean restarts — after any infra restart, engines
+#    register with ZK but the gateway never discovers them (cmd/start is one-shot). This made
+#    it impossible to produce a clean scaling test on the redeployed cluster.
+# 3. Boki scaling was validated in run_2 (boki_scaling_up_c10.csv) showing no latency disruption,
+#    but that data is not suitable for a thesis figure due to the sparse "before" phase.
+#
+# The Cloudburst plot below is the primary scaling timeline figure for the thesis.
+
+def plot_scaling_timeline_cb():
+    import csv
+
+    csv_path = RESULTS_DIR / "cloudburst_scaling_timeline.csv"
+    if not csv_path.exists():
+        print("  11_scaling_cloudburst.png — SKIPPED")
+        return
+
+    rows = []
+    with open(csv_path) as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            rows.append(row)
+
+    if not rows:
+        print("  11_scaling_cloudburst.png — SKIPPED (empty)")
+        return
+
+    timestamps = [int(row["timestamp_ms"]) for row in rows]
+    latencies = [int(row["latency_ms"]) for row in rows]
+    phases = [row["phase"] for row in rows]
+
+    t0 = min(timestamps)
+    elapsed_s = [(t - t0) / 1000 for t in timestamps]
+
+    scale_time = None
+    for i, phase in enumerate(phases):
+        if phase == "after" and (i == 0 or phases[i - 1] == "before"):
+            scale_time = elapsed_s[i]
+            break
+
+    fig, axes = plt.subplots(3, 1, figsize=(10, 7), sharex=True,
+                             gridspec_kw={"height_ratios": [1, 1.5, 1]})
+
+    # Throughput
+    window = 5
+    if len(elapsed_s) > window:
+        tp_times = []
+        tp_vals = []
+        for i in range(window, len(elapsed_s)):
+            dt = elapsed_s[i] - elapsed_s[i - window]
+            if dt > 0:
+                tp_times.append(elapsed_s[i])
+                tp_vals.append(window / dt)
+        axes[0].plot(tp_times, tp_vals, color=COLORS["Cloudburst + Anna"], linewidth=1)
+    axes[0].set_ylabel("Throughput\n(inv/s)")
+    axes[0].set_title("Cloudburst Manual Scale-Up (2→3 executors, c=5)")
+    axes[0].grid(True, alpha=0.3)
+
+    # Latency scatter
+    before_t = [t for t, p in zip(elapsed_s, phases) if p == "before"]
+    before_l = [l for l, p in zip(latencies, phases) if p == "before"]
+    after_t = [t for t, p in zip(elapsed_s, phases) if p == "after"]
+    after_l = [l for l, p in zip(latencies, phases) if p == "after"]
+
+    axes[1].scatter(before_t, before_l, s=8, alpha=0.5, color=COLORS["Cloudburst + Anna"], label="Before scale")
+    axes[1].scatter(after_t, after_l, s=8, alpha=0.5, color="#FF9900", label="After scale")
+    axes[1].set_ylabel("Latency (ms)")
+    axes[1].set_yscale("log")
+    axes[1].legend(fontsize=8)
+    axes[1].grid(True, alpha=0.3)
+
+    # Instance count
+    axes[2].step([0, scale_time or 120, max(elapsed_s)],
+                 [2, 3, 3], where="post", color=COLORS["Cloudburst + Anna"], linewidth=2)
+    axes[2].set_ylabel("Executor\ncount")
+    axes[2].set_xlabel("Time (seconds)")
+    axes[2].set_ylim(0.5, 4.5)
+    axes[2].set_yticks([1, 2, 3, 4])
+    axes[2].grid(True, alpha=0.3)
+
+    if scale_time:
+        for ax in axes:
+            ax.axvline(x=scale_time, color="red", linestyle="--", alpha=0.7, linewidth=1)
+        axes[0].annotate("Scale event", xy=(scale_time, 0.95), xycoords=("data", "axes fraction"),
+                         fontsize=8, color="red", ha="left", va="top",
+                         xytext=(5, 0), textcoords="offset points")
+
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "10_scaling_timeline.png")
+    plt.close(fig)
+    print("  10_scaling_timeline.png")
+
+
+# ── Plot 13: Latency CDF — Cloud ──
+
+def plot_latency_cdf_cloud():
+    CLOUD_DIR = SCRIPT_DIR.parent.parent / "results" / "cloud"
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+
+    for name in SYSTEMS:
+        sdir = SYSTEM_DIRS[name]
+        path = CLOUD_DIR / sdir / "latency-dist.json"
+        if not path.exists():
+            continue
+        with open(path) as f:
+            data = json.load(f)
+        inv_key = "_invocations"
+        invocations = list(data.get(inv_key, {}).values())
+        if not invocations:
+            continue
+        results = list(invocations[0].values())
+        lats = sorted(extract_client_latencies(results))
+        percentiles = np.arange(1, len(lats) + 1) / len(lats) * 100
+        ax.plot(lats, percentiles, color=COLORS[name], label=name, linewidth=1.5)
+
+    ax.set_xlabel("Client Latency (ms)")
+    ax.set_ylabel("Percentile (%)")
+    ax.set_title("Latency Distribution (CDF) — Cloud (EC2 in-VPC)")
+    ax.set_ylim(0, 100)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.savefig(OUT_DIR / "13_latency_cdf_cloud.png")
+    plt.close(fig)
+    print("  13_latency_cdf_cloud.png")
+
+
+# ── Plot 12: Throughput Scaling — Cloud ──
+
+def plot_throughput_scaling_cloud():
+    CLOUD_DIR = SCRIPT_DIR.parent.parent / "results" / "cloud"
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    concurrencies = [1, 10, 50, 100]
+
+    for name in SYSTEMS:
+        sdir = SYSTEM_DIRS[name]
+        throughputs = []
+        concs_available = []
+        for c in concurrencies:
+            path = CLOUD_DIR / sdir / f"throughput-c{c}.json"
+            if not path.exists():
+                continue
+            with open(path) as f:
+                data = json.load(f)
+            inv_key = "_invocations"
+            invocations = list(data.get(inv_key, {}).values())
+            if not invocations:
+                continue
+            results = list(invocations[0].values())
+            duration = data.get("end_time", 0) - data.get("begin_time", 1)
+            valid = [r for r in results if not r.get("stats", {}).get("failure")]
+            tp = len(valid) / duration if duration > 0 else 0
+            throughputs.append(tp)
+            concs_available.append(c)
+        if concs_available:
+            ax.plot(concs_available, throughputs, "o-", color=COLORS[name], label=name,
+                    linewidth=2, markersize=7)
+
+    ax.set_xlabel("Concurrency (number of parallel invocations)")
+    ax.set_ylabel("Throughput (invocations/sec)")
+    ax.set_title("Throughput Scaling — Cloud (EC2 in-VPC, 64KB state)")
+    ax.set_xscale("log")
+    ax.set_xticks(concurrencies)
+    ax.get_xaxis().set_major_formatter(ticker.ScalarFormatter())
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    fig.savefig(OUT_DIR / "12_throughput_scaling_cloud.png")
+    plt.close(fig)
+    print("  12_throughput_scaling_cloud.png")
+
+
+# ── Plot 11: Latency Decomposition — Edge vs Cloud ──
+
+def plot_latency_decomposition():
+    """Stacked bar chart decomposing client latency into Network RTT,
+    Serverless Overhead, and Function Execution for each system,
+    side by side for edge (laptop) and cloud (EC2) scenarios."""
+
+    CLOUD_DIR = SCRIPT_DIR.parent.parent / "results" / "cloud"
+
+    def decompose(results_dir, system_dir):
+        """Extract P50 decomposition from latency-dist.json."""
+        data_path = results_dir / system_dir / "latency-dist.json"
+        if not data_path.exists():
+            return None
+        with open(data_path) as f:
+            data = json.load(f)
+        inv_key = "_invocations"
+        invocations = list(data.get(inv_key, {}).values())
+        if not invocations:
+            return None
+        results = list(invocations[0].values())
+
+        # Filter warm invocations
+        warm = [r for r in results
+                if not r.get("stats", {}).get("cold_start")
+                and not r.get("stats", {}).get("failure")]
+        if not warm:
+            return None
+
+        clients = sorted([r["times"]["client"] / 1000 for r in warm])
+        benchmarks = sorted([r["times"]["benchmark"] / 1000 for r in warm])
+        rtts = sorted([r["times"]["http_startup"] * 1000 for r in warm])
+
+        n = len(clients)
+        p50 = lambda vals: vals[n // 2]
+
+        client_p50 = p50(clients)
+        func_p50 = p50(benchmarks)
+        rtt_p50 = p50(rtts)
+        overhead_p50 = max(0, client_p50 - func_p50 - rtt_p50)
+
+        return {
+            "client": client_p50,
+            "rtt": rtt_p50,
+            "function": func_p50,
+            "overhead": overhead_p50,
+            "count": n,
+        }
+
+    # Collect data for both scenarios
+    scenarios = {}
+    for scenario, rdir in [("Edge", RESULTS_DIR), ("Cloud", CLOUD_DIR)]:
+        scenarios[scenario] = {}
+        for name, sdir in SYSTEM_DIRS.items():
+            d = decompose(rdir, sdir)
+            if d:
+                scenarios[scenario][name] = d
+
+    if not scenarios.get("Edge") or not scenarios.get("Cloud"):
+        print("  11_latency_decomposition.png — SKIPPED (missing data)")
+        return
+
+    # Build the plot
+    fig, ax = plt.subplots(figsize=(10, 5.5))
+
+    # Order: Lambda, Cloudburst, Boki (worst→best in cloud, Boki improvement stands out at the end)
+    plot_order = ["Lambda + Redis", "Cloudburst + Anna", "Boki"]
+
+    bar_labels = []
+    rtt_vals = []
+    overhead_vals = []
+    func_vals = []
+    bar_colors = []
+    bar_alphas = []
+
+    for name in plot_order:
+        for scenario in ["Edge", "Cloud"]:
+            d = scenarios.get(scenario, {}).get(name)
+            if d:
+                bar_labels.append(f"{name.split(' +')[0].split(' ')[0]}\n({scenario.lower()})")
+                rtt_vals.append(d["rtt"])
+                overhead_vals.append(d["overhead"])
+                func_vals.append(d["function"])
+                bar_colors.append(COLORS[name])
+                bar_alphas.append(1.0 if scenario == "Edge" else 0.6)
+
+    x = np.arange(len(bar_labels))
+    # Add gaps between system pairs
+    positions = []
+    pos = 0
+    for i in range(len(bar_labels)):
+        positions.append(pos)
+        pos += 1
+        if (i + 1) % 2 == 0 and i < len(bar_labels) - 1:
+            pos += 0.5  # gap between systems
+    positions = np.array(positions)
+
+    width = 0.7
+
+    # Stacked bars: function (bottom), overhead (middle), rtt (top)
+    bars_func = ax.bar(positions, func_vals, width, label="Function execution",
+                       color=[c for c in bar_colors], alpha=0.9, edgecolor="white", linewidth=0.5)
+    bars_overhead = ax.bar(positions, overhead_vals, width, bottom=func_vals,
+                          label="Serverless overhead",
+                          color=[c for c in bar_colors], alpha=0.5, hatch="//",
+                          edgecolor="white", linewidth=0.5)
+    bars_rtt = ax.bar(positions, rtt_vals, width,
+                      bottom=[f + o for f, o in zip(func_vals, overhead_vals)],
+                      label="Network RTT",
+                      color=[c for c in bar_colors], alpha=0.25, hatch="...",
+                      edgecolor="white", linewidth=0.5)
+
+    # Value labels on top
+    for i, (pos, rtt, oh, fn) in enumerate(zip(positions, rtt_vals, overhead_vals, func_vals)):
+        total = rtt + oh + fn
+        ax.annotate(f"{total:.1f}ms", xy=(pos, total), xytext=(0, 4),
+                    textcoords="offset points", ha="center", fontsize=8, fontweight="bold")
+
+    ax.set_ylabel("Client Latency P50 (ms)")
+    ax.set_title("Latency Decomposition: Edge (laptop) vs Cloud (EC2 in-VPC)")
+    ax.set_xticks(positions)
+    ax.set_xticklabels(bar_labels, fontsize=9)
+
+    # Custom legend (since colors vary per system, use pattern-only legend)
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor="#888888", alpha=0.9, label="Function execution"),
+        Patch(facecolor="#888888", alpha=0.5, hatch="//", label="Serverless overhead"),
+        Patch(facecolor="#888888", alpha=0.25, hatch="...", label="Network RTT"),
+    ]
+    ax.legend(handles=legend_elements, loc="upper right", fontsize=9)
+    ax.grid(True, alpha=0.3, axis="y")
+
+    ax.annotate(
+        "Edge = laptop over internet. Cloud = EC2 in same VPC (private IP) or region (API Gateway).\n"
+        "Network RTT = pycurl PRETRANSFER_TIME (TCP handshake, incl. TLS for Lambda).",
+        xy=(0.5, -0.18), xycoords="axes fraction", ha="center", fontsize=7,
+        style="italic", color="gray")
+
+    fig.savefig(OUT_DIR / "11_latency_decomposition.png")
+    plt.close(fig)
+    print("  11_latency_decomposition.png")
+
+
 # ── Main ──
 
 if __name__ == "__main__":
@@ -541,5 +860,9 @@ if __name__ == "__main__":
     plot_cost()
     plot_resource_usage()
     plot_state_placement()
+    plot_scaling_timeline_cb()
+    plot_latency_decomposition()
+    plot_throughput_scaling_cloud()
+    plot_latency_cdf_cloud()
 
     print(f"\nDone. {len(list(OUT_DIR.glob('*.png')))} plots generated.")

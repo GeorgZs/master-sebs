@@ -105,3 +105,17 @@ variable "bench_binary_s3_uri" {
   description = "Optional S3 URI for the stateful_bench Go binary (e.g. s3://bucket/stateful_bench). If empty, upload manually."
   default     = ""
 }
+
+# --- SeBS benchmark client ---
+
+variable "deploy_sebs_client" {
+  type        = bool
+  description = "Deploy a SeBS benchmark client EC2 inside the Boki VPC for cloud-to-cloud latency measurements."
+  default     = false
+}
+
+variable "client_instance_type" {
+  type        = string
+  description = "EC2 instance type for the SeBS benchmark client."
+  default     = "t3.small"
+}

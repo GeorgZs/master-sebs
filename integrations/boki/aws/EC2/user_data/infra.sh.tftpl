@@ -17,12 +17,12 @@ usermod -aG docker ubuntu
 docker pull zjia/boki:sosp-ae
 docker pull zookeeper:3.6.2
 
+# Set up workspace (must come before tee to /opt/boki/)
+mkdir -p /opt/boki/workspace /mnt/storage
+
 # Detect the primary network interface (ens5 on Ubuntu EC2, eth0 in Docker)
 HOST_IFACE=$(ip -o route get 1 | awk '{print $5}')
 echo "Detected host interface: $HOST_IFACE" | tee /opt/boki/HOST_IFACE
-
-# Set up workspace
-mkdir -p /opt/boki/workspace /mnt/storage
 
 # ZK setup script — waits for engines to register, then issues start.
 # With host networking, ZK is at localhost:2181.
@@ -196,6 +196,9 @@ services:
 COMPOSE
 
 chown -R ubuntu:ubuntu /opt/boki
+
+# Auto-start the cluster
+cd /opt/boki/workspace && docker-compose up -d
 
 cat > /opt/boki/READY << EOF
 Boki infrastructure node ready (Ubuntu 20.04, host networking).

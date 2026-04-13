@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+# SeBS benchmark client for Boki VPC.
+# Runs batch_invoke.py against the Boki gateway via private IP.
+
+apt-get update -y
+apt-get install -y git python3 python3-pip python3-dev libcurl4-openssl-dev libssl-dev gcc curl jq
+
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="/root/.local/bin:$PATH"
+
+# Clone SeBS repo
+cd /home/ubuntu
+git clone https://github.com/GeorgZs/master-sebs.git
+cd master-sebs
+
+# Install Python dependencies
+uv pip install --system pycurl numpy
+
+# Configure git for committing results
+git config user.email "sebs-client@ec2.aws"
+git config user.name "SeBS Cloud Client (Boki)"
+
+chown -R ubuntu:ubuntu /home/ubuntu/master-sebs
+
+# Create results directory
+mkdir -p /home/ubuntu/master-sebs/results/cloud/boki
+chown -R ubuntu:ubuntu /home/ubuntu/master-sebs/results
+
+# Write target endpoint config
+cat >/home/ubuntu/sebs-env.sh <<EOF
+export BOKI_GATEWAY_URL=http://${infra_private_ip}:${gateway_http_port}
+export BOKI_GATEWAY_PRIVATE=http://${infra_private_ip}:${gateway_http_port}
+export BOKI_GATEWAY_PUBLIC=http://${infra_public_ip}:${gateway_http_port}
+export RESULTS_DIR=/home/ubuntu/master-sebs/results/cloud/boki
+EOF
+chown ubuntu:ubuntu /home/ubuntu/sebs-env.sh
+
+echo "SEBS_CLIENT_READY" > /tmp/sebs-client-ready

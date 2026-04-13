@@ -51,3 +51,29 @@ variable "lambda_reserved_concurrent_executions" {
   description = "Reserved concurrency (-1 = omit, use account default / elastic scaling)."
   default     = -1
 }
+
+# --- SeBS benchmark client ---
+
+variable "deploy_sebs_client" {
+  type        = bool
+  description = "Deploy a SeBS benchmark client EC2 inside the Lambda VPC for cloud-to-cloud latency measurements."
+  default     = false
+}
+
+variable "client_instance_type" {
+  type        = string
+  description = "EC2 instance type for the SeBS benchmark client."
+  default     = "t3.small"
+}
+
+variable "key_pair_name" {
+  type        = string
+  description = "EC2 key pair name for SSH access."
+  default     = ""
+}
+
+variable "admin_cidr" {
+  type        = string
+  description = "CIDR allowed for SSH ingress to client."
+  default     = "0.0.0.0/0"
+}

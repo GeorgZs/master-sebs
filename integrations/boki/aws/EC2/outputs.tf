@@ -22,3 +22,8 @@ output "engine_asg_name" {
   value       = aws_autoscaling_group.engines.name
   description = "Engine ASG name (use with aws autoscaling set-desired-capacity)."
 }
+
+output "client_public_ip" {
+  value       = var.deploy_sebs_client ? aws_instance.client[0].public_ip : null
+  description = "SeBS benchmark client public IP (SSH access)."
+}

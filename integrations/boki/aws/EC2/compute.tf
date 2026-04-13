@@ -97,3 +97,28 @@ resource "aws_autoscaling_group" "engines" {
     propagate_at_launch = true
   }
 }
+
+# ---------- SeBS benchmark client ----------
+# Lightweight EC2 for running batch_invoke.py inside the Boki VPC.
+# Targets the gateway via private IP for cloud-to-cloud latency measurement.
+
+resource "aws_instance" "client" {
+  count                  = var.deploy_sebs_client ? 1 : 0
+  ami                    = data.aws_ami.ubuntu2004.id
+  instance_type          = var.client_instance_type
+  subnet_id              = aws_subnet.public[0].id
+  vpc_security_group_ids = [aws_security_group.cluster.id]
+  iam_instance_profile   = aws_iam_instance_profile.ec2.name
+  key_name               = var.key_pair_name != "" ? var.key_pair_name : null
+
+  user_data = templatefile("${path.module}/user_data/client.sh.tftpl", {
+    infra_private_ip  = aws_instance.infra.private_ip
+    infra_public_ip   = aws_instance.infra.public_ip
+    gateway_http_port = var.gateway_http_port
+  })
+
+  tags = {
+    Name = "${local.name_prefix}-sebs-client"
+    Role = "sebs-benchmark-client"
+  }
+}
