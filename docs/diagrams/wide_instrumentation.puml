@@ -1,0 +1,155 @@
+@startuml wide_instrumentation
+title Forked Runtime Instrumentation to SeBS Metrics Pipeline
+
+' Slide Optimization Settings
+left to right direction
+
+' ============================================================================
+' TOP LAYER: FORKED REPOS
+' ============================================================================
+package "Forked Repos" as pkgForked {
+  component cbFork as "master-cloudburst"
+  component bokiFork as "master-boki"
+}
+
+' ============================================================================
+' SECOND LAYER: RUNTIME DEPLOYMENT
+' ============================================================================
+package "Runtime Deployment" as pkgRuntime {
+  ' Split into rows to prevent one massive horizontal line
+  component cbScheduler as "Cloudburst Scheduler"
+  component cbExecutor as "Cloudburst Executor"
+  component annaKvs as "Anna KVS"
+  component bokiRuntime as "Boki Runtime"
+  
+  cbScheduler -[hidden]right-> cbExecutor
+  cbExecutor -[hidden]right-> annaKvs
+  annaKvs -[hidden]right-> bokiRuntime
+  
+  ' Row 2
+  component durableRuntime as "Lambda Durable Runtime"
+  component baselineRuntime as "Lambda API Runtime"
+  component restateServer as "Restate Server"
+  component restateHandler as "Restate Handler"
+  
+  cbScheduler -[hidden]down-> durableRuntime
+  durableRuntime -[hidden]right-> baselineRuntime
+  baselineRuntime -[hidden]right-> restateServer
+  restateServer -[hidden]right-> restateHandler
+}
+
+' Force Forked Repos to sit squarely ABOVE Runtime Deployment
+pkgForked -down-> pkgRuntime
+
+' ============================================================================
+' THIRD LAYER: PER-RUN SIDECARS
+' ============================================================================
+package "Per-run Sidecars" as pkgSidecars {
+  artifact extraMetricsFile as "extra_metrics.json"
+  artifact telemetryFile as "telemetry.json"
+  artifact eventsFile as "events.jsonl"
+  
+  extraMetricsFile -[hidden]right-> telemetryFile
+  telemetryFile -[hidden]right-> eventsFile
+}
+
+pkgRuntime -down-> pkgSidecars
+
+' ============================================================================
+' BOTTOM LAYER: MASTER-SEBS PIPELINE
+' ============================================================================
+package "master-sebs" as pkgSebs {
+  component benchmarks as "Benchmarks"
+  
+  ' Benchmarks split across 2 clean rows
+  component cloudburstBench as "benchmark: cloudburst-stateful path"
+  component bokiBench as "benchmark: boki-shared-log path"
+  component durableBench as "benchmark: lambda-durable path"
+  component baselineBench as "benchmark: baseline path"
+  component restateBench as "benchmark: restate-stateful path"
+  
+  benchmarks --> cloudburstBench
+  benchmarks --> bokiBench
+  benchmarks --> durableBench
+  benchmarks --> baselineBench
+  benchmarks --> restateBench
+
+  ' Automation Execution Scripts
+  component runCb as "run_cloudburst_bench.sh"
+  component runBoki as "run_boki_bench.sh"
+  component runDurable as "run_durable_bench.sh"
+  component runBaseline as "run_baseline_bench.sh"
+  component runRestate as "run_restate_bench.sh"
+
+  cloudburstBench --> runCb
+  bokiBench --> runBoki
+  durableBench --> runDurable
+  baselineBench --> runBaseline
+  restateBench --> runRestate
+
+  ' Data Collection Aggregators
+  component collectCb as "collect_cloudburst_results.py"
+  component collectHttp as "collect_http_run.py"
+  
+  runCb --> collectCb
+  runBoki --> collectHttp
+  runDurable --> collectHttp
+  runBaseline --> collectHttp
+  runRestate --> collectHttp
+
+  ' Normalization Workers
+  component cbNorm as "cloudburst_to_common_schema.py"
+  component eventMetrics as "event_metrics.py"
+  component bokiNorm as "boki_to_common_schema.py"
+  component durableNorm as "durable_to_common_schema.py"
+  component baselineNorm as "baseline_to_common_schema.py"
+  component restateNorm as "restate_to_common_schema.py"
+
+  collectCb --> cbNorm
+  collectCb --> eventMetrics
+  collectHttp --> eventMetrics
+  collectHttp --> bokiNorm
+  collectHttp --> durableNorm
+  collectHttp --> baselineNorm
+  collectHttp --> restateNorm
+
+  ' Central Sink
+  database normalized as "Normalized JSONL/CSV"
+  
+  cbNorm --> normalized
+  eventMetrics --> normalized
+  bokiNorm --> normalized
+  durableNorm --> normalized
+  baselineNorm --> normalized
+  restateNorm --> normalized
+}
+
+' Force master-sebs to sit cleanly below the sidecars
+pkgSidecars -down-> pkgSebs
+
+' ============================================================================
+' INTER-PACKAGE FUNCTIONAL LINKS (Arrows crossing packages)
+' ============================================================================
+bokiFork --> bokiRuntime
+cbFork --> cbScheduler
+cbFork --> cbExecutor
+cbFork --> annaKvs
+
+baselineRuntime ---> eventsFile
+durableRuntime ---> eventsFile
+bokiRuntime ---> eventsFile
+cbScheduler ---> eventsFile
+cbExecutor ---> eventsFile
+annaKvs ---> eventsFile
+restateServer ---> eventsFile
+restateHandler ---> eventsFile
+cbScheduler ---> telemetryFile
+cbScheduler ---> extraMetricsFile
+
+eventsFile ---> collectHttp
+eventsFile ---> collectCb
+telemetryFile ---> collectHttp
+telemetryFile ---> collectCb
+extraMetricsFile ---> collectCb
+
+@enduml

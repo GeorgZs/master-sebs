@@ -1,0 +1,47 @@
+@startuml sfaas-design
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam rectangle {
+    BackgroundColor<<exec>> #E3F2FD
+    BorderColor<<exec>> #1565C0
+    BackgroundColor<<state>> #E8F5E9
+    BorderColor<<state>> #2E7D32
+    BackgroundColor<<entry>> #FFF8E1
+    BorderColor<<entry>> #F9A825
+}
+skinparam package {
+    BackgroundColor #FAFAFA
+    BorderColor #9E9E9E
+}
+
+actor "Client /\nEvent source" as client
+
+package "FaaS platform" {
+
+    rectangle "Invocation layer\n(trigger, routing, autoscaling)" <<entry>> as gw
+
+    package "Execution plane: stateless, ephemeral" {
+        rectangle "Function\ninstance" <<exec>> as f1
+        rectangle "Function\ninstance" <<exec>> as f2
+        rectangle "Function\ninstance" <<exec>> as fN
+    }
+}
+
+package "State plane: durable, shared" {
+    rectangle "State-access\ninterface" <<state>> as api
+    database "State\nstore" <<state>> as store
+    rectangle "Consistency &\ncoordination" <<state>> as coord
+}
+
+client --> gw : request / event
+gw --> f1
+gw --> f2
+gw --> fN : dispatch\n(scales with load)
+
+f1 --> api
+f2 --> api
+fN --> api : read / write state
+api --> store : durable access
+coord -[#2E7D32,dashed]- store : orders concurrent\naccess
+
+@enduml

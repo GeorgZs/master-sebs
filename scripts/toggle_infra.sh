@@ -21,6 +21,7 @@ SEBS_DIR="$(dirname "$SCRIPT_DIR")"
 TF_BASELINE="$SEBS_DIR/integrations/baseline/aws"
 TF_CLOUDBURST="$SEBS_DIR/integrations/cloudburst/aws"
 TF_BOKI="$SEBS_DIR/integrations/boki/aws/EC2"
+TF_RESTATE="$SEBS_DIR/integrations/restate/aws"
 
 # ASG names
 BOKI_ASG="boki-experimental-engines"
@@ -180,6 +181,14 @@ dismantle() {
     echo "=== Destroying Baseline (Lambda + Redis) ==="
     if [ -d "$TF_BASELINE" ]; then
         cd "$TF_BASELINE" && AWS_PROFILE="$PROFILE" terraform destroy -auto-approve 2>&1 | tail -5
+    else
+        echo "  No Terraform dir found"
+    fi
+
+    echo ""
+    echo "=== Destroying Restate ==="
+    if [ -d "$TF_RESTATE" ]; then
+        cd "$TF_RESTATE" && AWS_PROFILE="$PROFILE" terraform destroy -auto-approve 2>&1 | tail -5
     else
         echo "  No Terraform dir found"
     fi
